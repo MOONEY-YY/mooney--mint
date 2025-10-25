@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MOONEY Mint（可直接上线）</title>
+    <!-- 引入钱包核心依赖，确保不报错 -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/ethers/5.2.0/ethers.umd.min.js"></script>
+    <style>
+        body{text-align:center;padding:80px;margin:0;font-family:Arial;}
+        #connectBtn{padding:18px 40px;font-size:20px;background:#0071e3;color:white;border:none;border-radius:8px;cursor:pointer;}
+        #mintBtn{padding:18px 40px;font-size:20px;background:#ccc;color:white;border:none;border-radius:8px;cursor:no-drop;margin-left:20px;}
+        #msg{margin-top:30px;font-size:16px;color:#333;}
+    </style>
+</head>
+<body>
+    <h1>MOONEY Mint（Base链）</h1>
+    <button id="connectBtn">连接OKX钱包</button>
+    <button id="mintBtn" disabled>Mint（5 USDC）</button>
+    <p id="msg">请先连接钱包</p>
+
+    <script>
+        // 核心配置（已核对正确，直接用）
+        const CONTRACT_ADDR = "0x14E8372E5cD2a5Da76B87d610475a66020F540A1"; // MOONEY合约地址
+        const BASE_CHAIN_ID = "0x2105"; // Base链ID
+        const USDC_ADDR = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; // Base链USDC地址
+
+        // 等待页面加载完成再执行
+        window.onload = function() {
+            const connectBtn = document.getElementById("connectBtn");
+            const mintBtn = document.getElementById("mintBtn");
+            const msg = document.getElementById("msg");
+            let provider, signer;
+
+            // 1. 连接钱包功能
+            connectBtn.onclick = async () => {
+                // 检查是否安装OKX钱包
+                if (!window.okxwallet) {
+                    msg.style.color = "red";
+                    msg.textContent = "请先安装OKX钱包插件！";
+                    return;
+                }
+
+                try {
+                    // 授权钱包访问
+                    await window.okxwallet.request({ method: "eth_requestAccounts" });
+                    // 绑定钱包Provider
+                    provider = new ethers.providers.Web3Provider(window.okxwallet);
+                    signer = provider.getSigner();
+
+                    // 切换/添加Base链（自动处理）
+                    await window.okxwallet.request({
+                        method: "wallet_switchEthereumChain",
+                        params: [{ chainId: BASE_CHAIN_ID }]
+                    }).catch(async () => {
+                        // 未添加Base链则自动添加
+                        await window.okxwallet.request({
+                            method: "wallet_addEthereumChain",
+                            params: [{
+                                chainId: BASE_CHAIN_ID,
+                                chainName: "Base Mainnet",
+                                rpcUrls: ["https://mainnet.base.org"],
+                                nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+                                blockExplorerUrls: ["https://basescan.org"]
+                            }]
+                        });
+                    });
+
+                    // 连接成功提示
+                    msg.style.color = "green";
+                    msg.textContent = "钱包连接成功！";
+                    connectBtn.disabled = true;
+                    mintBtn.disabled = false;
+                    mintBtn.style.cursor = "pointer";
+                    mintBtn.style.background = "#00c853";
+
+                } catch (err) {
+                    msg.style.color = "red";
+                    msg.textContent = "连接失败：" + err.message.slice(0, 50);
+                }
+            };
+
+            // 2. Mint功能（授权USDC+执行Mint）
+            mintBtn.onclick = async () => {
+                try {
+                    msg.style.color = "#333";
+                    msg.textContent = "正在授权USDC...";
+
+                    // 第一步：授权5 USDC给合约
+                    const usdcAbi = [{ "inputs": [{ "internalType": "address", "name": "spender", "type": "address" }, { "internalType": "uint256", "name": "value", "type": "uint256" }], "name": "approve", "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }], "type": "function" }];
+                    const usdcContract = new ethers.Contract(USDC_ADDR, usdcAbi, signer);
+                    await usdcContract.approve(CONTRACT_ADDR, ethers.utils.parseUnits("5", 6)); // 5 USDC（USDC是6位小数）
+
+                    // 第二步：执行Mint
+                    msg.textContent = "正在Mint...";
+                    const mintAbi = [{ "inputs": [], "name": "mint", "outputs": [], "type": "function" }];
+                    const mintContract = new ethers.Contract(CONTRACT_ADDR, mintAbi, signer);
+                    const tx = await mintContract.mint();
+                    await tx.wait(); // 等待交易上链
+
+                    // Mint成功提示
+                    msg.style.color = "green";
+                    msg.textContent = "Mint成功！交易哈希：" + tx.hash.slice(0, 12) + "...";
+
+                } catch (err) {
+                    msg.style.color = "red";
+                    msg.textContent = "Mint失败：" + err.message.slice(0, 50);
+                }
+            };
+        };
+    </script>
+</body>
+</html>
